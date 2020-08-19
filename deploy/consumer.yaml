@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kedabus-consumer-secret
+data:
+  ConnString: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kedabus-consumer
+  namespace: default
+  labels:
+    app: kedabus-consumer
+spec:
+  selector:
+    matchLabels:
+      app: kedabus-consumer
+  template:
+    metadata:
+      labels:
+        app: kedabus-consumer
+    spec:
+      containers:
+        - name: kedabus-consumer
+          image: docker.io/frodopwns/kedabus:latest
+          imagePullPolicy: Always
+          args: ["consume"]
+          env:
+            - name: SERVICEBUS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: kedabus-consumer-secret
+                  key: ConnString
+---
+apiVersion: keda.k8s.io/v1alpha1
+kind: ScaledObject
+metadata:
+  name: kedabus-consumer
+  namespace: default
+  labels:
+    deploymentName: kedabus-consumer
+spec:
+  scaleTargetRef:
+    deploymentName: kedabus-consumer
+  pollingInterval: 5 # Optional. Default: 30 seconds
+  cooldownPeriod: 30 # Optional. Default: 300 seconds
+  maxReplicaCount: 10 # Optional. Default: 100
+  triggers:
+    - type: azure-servicebus
+      metadata:
+        queueName: tasks
+        queueLength: '5'
+      authenticationRef:
+        name: kedabus-consumer-trigger
+---
+apiVersion: keda.k8s.io/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: kedabus-consumer-trigger
+  namespace: default
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name: kedabus-consumer-secret
+      key: ConnString
+---
